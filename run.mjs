@@ -95,9 +95,11 @@ for (const site of SITES.filter((s) => !only || s.company === only)) {
   const origin = `https://${site.domain}`;
   const bodyLinkCounts = new Map();
   const bodyText = new Map();
+  const bodyLinksByPage = new Map();
   const linkedPaths = new Set();
   for (const p of snap.pages) {
     bodyText.set(p.url, p._bodyText || '');
+    bodyLinksByPage.set(p.url, p._bodyLinks || []);
     for (const href of p._bodyLinks || []) {
       const abs = origin + href;
       linkedPaths.add(abs);
@@ -124,7 +126,7 @@ for (const site of SITES.filter((s) => !only || s.company === only)) {
     orphanPages(snap.pages, bodyLinkCounts),
     missingFromSitemap([...snap.pages, ...discovered], sitemapUrls),
     metadataWork(snap.pages),
-    linkingOpportunities(snap.pages, LINK_TARGETS, bodyText),
+    linkingOpportunities(snap.pages, LINK_TARGETS, bodyText, bodyLinksByPage),
   ]);
 
   perSite.push({ company: site.company, domain: site.domain, ...counts, ...delta, work });
