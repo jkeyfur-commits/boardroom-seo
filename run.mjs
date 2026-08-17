@@ -19,13 +19,17 @@ import { crawlSite } from './lib/crawl.mjs';
 import { computeFindings, reconcile } from './lib/diff.mjs';
 import * as store from './lib/store.mjs';
 import { shouldSend, buildSubject, buildText, buildWeeklySubject, buildWeeklyText, sendEmail } from './lib/report.mjs';
-import { orphanPages, missingFromSitemap, metadataWork, linkingOpportunities, buildWorkList } from './lib/opportunities.mjs';
+import { orphanPages, missingFromSitemap, metadataWork, linkingOpportunities, searchOpportunities, buildWorkList } from './lib/opportunities.mjs';
+import { loadCredentials, searchConfigured, fetchSearchData } from './lib/searchconsole.mjs';
 
 const SITES = [
   {
     company: 'aro',
     domain: 'actionrecoveryonline.com',
     sitemap_url: 'https://actionrecoveryonline.com/sitemap.xml',
+    // Search Console property id. A Domain property is `sc-domain:`, not a
+    // URL — passing a URL to one returns 403 and reads like a permissions bug.
+    search_property: 'sc-domain:actionrecoveryonline.com',
     extra_hosts: ['www.actionrecoveryonline.com'],
     redirects_path: 'public/_redirects',
     repo_path: 'C:\\Users\\KIEFF\\aro-website',
@@ -34,6 +38,7 @@ const SITES = [
     company: 'starlight',
     domain: 'starlightautoglass.com',
     sitemap_url: 'https://starlightautoglass.com/sitemap.xml',
+    search_property: 'sc-domain:starlightautoglass.com',
     extra_hosts: ['www.starlightautoglass.com'],
     redirects_path: null,
     repo_path: null,
@@ -55,6 +60,11 @@ const canStore = store.storeConfigured() && !dryRun;
 if (!canStore && !asJson) {
   log(dryRun ? '(dry run — nothing will be written or sent)' : '(no Boardroom credentials — console only)\n');
 }
+
+// Loaded once. A bad credential should stop the run loudly at the top, not
+// halfway through the second site.
+const gscKey = searchConfigured() ? loadCredentials() : null;
+if (!gscKey && !asJson) log('(no Search Console credentials — crawl-only opportunities)\n');
 
 const perSite = [];
 const snapshots = [];
@@ -122,11 +132,23 @@ for (const site of SITES.filter((s) => !only || s.company === only)) {
     { url: `${origin}/phoenix-debt-collection-agency`, phrases: ['Phoenix'] },
   ].filter((t) => sitemapUrls.includes(t.url));
 
+  // Search data is a separate failure domain from the crawl. A Search Console
+  // outage must not take down the half of this that works without it.
+  let searchData = null;
+  if (gscKey && site.search_property) {
+    try {
+      searchData = await fetchSearchData(gscKey, site.search_property);
+    } catch (err) {
+      log(`   search data unavailable: ${err.message}`);
+    }
+  }
+
   const work = buildWorkList([
     orphanPages(snap.pages, bodyLinkCounts),
     missingFromSitemap([...snap.pages, ...discovered], sitemapUrls),
     metadataWork(snap.pages),
     linkingOpportunities(snap.pages, LINK_TARGETS, bodyText, bodyLinksByPage),
+    searchOpportunities(searchData),
   ]);
 
   perSite.push({ company: site.company, domain: site.domain, ...counts, ...delta, work });

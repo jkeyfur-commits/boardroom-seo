@@ -1,3 +1,8 @@
 node_modules/
 .wrangler/
 .dev.vars
+
+# Never. Credentials live in ~/.secrets, outside every repo.
+*.json.key
+service-account*.json
+*-credentials.json
