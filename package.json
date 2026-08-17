@@ -1,0 +1,11 @@
+{
+  "name": "boardroom-seo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node run.mjs --dry-run",
+    "run": "node run.mjs",
+    "test": "node --test lib/*.test.mjs",
+    "deploy": "wrangler deploy"
+  }
+}
