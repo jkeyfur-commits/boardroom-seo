@@ -2,12 +2,21 @@
   "name": "boardroom-seo-monitor",
   "main": "worker.mjs",
   "compatibility_date": "2026-08-01",
+  // searchconsole.mjs signs the service-account JWT with node:crypto and reads
+  // the key file with node:fs. The same module runs under Node in run.mjs, so
+  // rewriting it against WebCrypto would mean two implementations of the one
+  // signature that must be byte-identical. The flag costs nothing and keeps it
+  // at one.
+  "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "triggers": {
     // 09:00 UTC = 02:00 Phoenix. Deliberately BEFORE the working day, so a
     // problem introduced by yesterday's deploy is in the inbox at breakfast.
     // ONE SITE PER TRIGGER — see CRON_SITE in worker.mjs. Both sites in a
     // single invocation needs ~52 subrequests against a free-plan limit of 50.
-    "crons": ["0 9 * * *", "10 9 * * *"]
+    // The third is the Monday digest — see CRON_WEEKLY in worker.mjs. It
+    // covers both sites in one email and writes nothing, which is what keeps
+    // it inside the subrequest limit.
+    "crons": ["0 9 * * *", "10 9 * * *", "0 14 * * 1"]
   }
 }
