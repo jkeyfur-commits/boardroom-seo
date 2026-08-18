@@ -6,6 +6,8 @@
   "triggers": {
     // 09:00 UTC = 02:00 Phoenix. Deliberately BEFORE the working day, so a
     // problem introduced by yesterday's deploy is in the inbox at breakfast.
-    "crons": ["0 9 * * *"]
+    // ONE SITE PER TRIGGER — see CRON_SITE in worker.mjs. Both sites in a
+    // single invocation needs ~52 subrequests against a free-plan limit of 50.
+    "crons": ["0 9 * * *", "10 9 * * *"]
   }
 }

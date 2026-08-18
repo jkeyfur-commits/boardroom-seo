@@ -22,6 +22,10 @@
 import { crawlSite } from './lib/crawl.mjs';
 import { computeFindings, reconcile } from './lib/diff.mjs';
 import { shouldSend, buildSubject, buildText, sendEmail } from './lib/report.mjs';
+// Row SHAPE is shared with run.mjs even though the transport is not — this
+// file talks to Supabase through `env`, not process.env. Keeping its own copy
+// of the shaping is what let the `_bodyLinks` bug survive being fixed once.
+import { pageRow } from './lib/store.mjs';
 
 const SITES = [
   {
@@ -68,11 +72,33 @@ function db(env) {
   };
 }
 
-async function runOnce(env) {
+/**
+ * ONE SITE PER INVOCATION, and the reason is a hard platform limit.
+ *
+ * Cloudflare allows 50 subrequests per Worker invocation on the free plan. A
+ * run covering both sites needs about 52 — 32 fetches to crawl ARO's 29 pages,
+ * 7 for Starlight, plus Supabase and the email — and the retry added to
+ * crawl.mjs can push a bad night higher still. The first real invocation died
+ * on exactly that.
+ *
+ * So each cron trigger handles one site, and `event.cron` says which. Crons
+ * cannot carry arguments, but they can be told apart, which is enough.
+ *
+ * A side benefit worth keeping even on a paid plan: a site whose crawl hangs
+ * no longer takes the other one down with it. The cost is that a night with
+ * problems on both sites produces two emails rather than one — acceptable,
+ * because the subject names the site and most nights are silent anyway.
+ */
+const CRON_SITE = {
+  '0 9 * * *': 'aro',
+  '10 9 * * *': 'starlight',
+};
+
+async function runOnce(env, only = null) {
   const q = db(env);
   const perSite = [];
 
-  for (const site of SITES) {
+  for (const site of SITES.filter((s) => !only || s.company === only)) {
     const snap = await crawlSite(site, {});
 
     // Baseline = last SUCCESSFUL run. Diffing against a failed crawl would
@@ -106,10 +132,14 @@ async function runOnce(env) {
       await q('seo_pages', {
         method: 'POST',
         prefer: 'return=minimal',
-        body: snap.pages.slice(i, i + 200).map((p) => ({
-          run_id: run.run_id, company: site.company, source: SOURCE,
-          observed_at: snap.observed_at, ...p,
-        })),
+        body: snap.pages.slice(i, i + 200).map((p) =>
+          pageRow(p, {
+            runId: run.run_id,
+            company: site.company,
+            source: SOURCE,
+            observedAt: snap.observed_at,
+          })
+        ),
       });
     }
 
@@ -162,9 +192,15 @@ async function runOnce(env) {
 }
 
 export default {
-  async scheduled(_event, env, ctx) {
+  async scheduled(event, env, ctx) {
+    // An unrecognised cron runs everything rather than nothing: a schedule
+    // added later should degrade to "does too much" and hit the subrequest
+    // limit loudly, not to "does nothing" and go silent.
+    const only = CRON_SITE[event.cron] ?? null;
     ctx.waitUntil(
-      runOnce(env).catch((err) => console.error(`seo monitor failed: ${err.message}`))
+      runOnce(env, only).catch((err) =>
+        console.error(`seo monitor failed (${event.cron} -> ${only ?? 'all'}): ${err.message}`)
+      )
     );
   },
 
@@ -178,7 +214,11 @@ export default {
       return new Response('unauthorized', { status: 401 });
     }
     try {
-      return Response.json(await runOnce(env));
+      // ?site=aro forces one site, matching what a cron does. Without it the
+      // manual trigger runs both and trips the same subrequest limit the
+      // split exists to avoid.
+      const only = url.searchParams.get('site');
+      return Response.json(await runOnce(env, only));
     } catch (err) {
       return Response.json({ error: err.message }, { status: 500 });
     }
