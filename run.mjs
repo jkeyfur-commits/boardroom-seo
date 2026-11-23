@@ -39,6 +39,8 @@ const SITES = [
     domain: 'starlightautoglass.com',
     sitemap_url: 'https://starlightautoglass.com/sitemap.xml',
     search_property: 'sc-domain:starlightautoglass.com',
+    // Every page must carry this Google Tag Manager container (GA4, Google Ads conversions, Meta pixel live inside it).
+    required_tags: ['GTM-K3G6FMRK'],
     extra_hosts: ['www.starlightautoglass.com'],
     redirects_path: null,
     repo_path: null,
